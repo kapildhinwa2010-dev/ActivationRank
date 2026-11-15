@@ -18,6 +18,10 @@ __all__ = [
     "pca_compress",
     "random_project",
     "reconstruction_error",
+    "retained_variance",
+    "column_variance",
+    "rank_columns",
+    "reconstruction_impact",
 ]
 
 
@@ -105,3 +109,43 @@ def retained_variance(s: np.ndarray, rank: int) -> float:
     if total == 0.0:
         return 1.0
     return float((s[:rank] ** 2).sum() / total)
+
+
+def column_variance(matrix: np.ndarray) -> np.ndarray:
+    """Per-column variance of a (samples x features) matrix."""
+    matrix = _check_matrix(matrix)
+    if matrix.shape[0] < 2:
+        raise ValueError("need at least 2 samples to compute variance")
+    return matrix.var(axis=0)
+
+
+def rank_columns(matrix: np.ndarray, top: int = 0):
+    """Rank activation columns by variance (descending).
+
+    Returns (indices, scores): column positions sorted from most to least
+    variable, and their variances. top=0 means all columns.
+    """
+    variances = column_variance(matrix)
+    order = np.argsort(variances)[::-1]
+    if top and top > 0:
+        order = order[:top]
+    return order, variances[order]
+
+
+def reconstruction_impact(matrix: np.ndarray, rank: int = 8) -> np.ndarray:
+    """Per-column error contribution of a rank-k SVD reconstruction.
+
+    Returns a vector of length n_cols: column i share of the total squared
+    reconstruction error. Largest values = columns the low-rank
+    approximation hurts most.
+    """
+    matrix = _check_matrix(matrix)
+    if rank < 1:
+        raise ValueError("rank must be >= 1")
+    u, s, vt = svd_compress(matrix, rank)
+    approx = (u * s) @ vt
+    col_err = ((matrix - approx) ** 2).sum(axis=0)
+    total = float(col_err.sum())
+    if total == 0.0:
+        return np.zeros(matrix.shape[1])
+    return col_err / total
